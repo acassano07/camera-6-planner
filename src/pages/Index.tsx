@@ -7,16 +7,18 @@ import { Plus, Hotel, Calendar, Users, TrendingUp } from "lucide-react";
 import { RoomCard } from "@/components/RoomCard";
 import { BookingCard } from "@/components/BookingCard";
 import { BookingForm } from "@/components/BookingForm";
+import { Calendar as CalendarView } from "@/components/Calendar";
 import { Room, Booking, BookingFormData } from "@/types/booking";
 import { useToast } from "@/hooks/use-toast";
+import { findOptimalRoom, getOccupancyStats } from "@/utils/roomAssignment";
 
 const initialRooms: Room[] = [
-  { id: 1, name: "Camera Deluxe 1", type: "Camera Deluxe", status: "available" },
-  { id: 2, name: "Camera Standard 2", type: "Camera Standard", status: "available" },
-  { id: 3, name: "Suite Familiare 3", type: "Suite Familiare", status: "available" },
-  { id: 4, name: "Camera Deluxe 4", type: "Camera Deluxe", status: "available" },
-  { id: 5, name: "Camera Standard 5", type: "Camera Standard", status: "available" },
-  { id: 6, name: "Suite Premium 6", type: "Suite Premium", status: "available" },
+  { id: 1, name: "Camera 1", type: "Camera Standard", capacity: 3, status: "available" },
+  { id: 2, name: "Camera 2", type: "Camera Standard", capacity: 3, status: "available" },
+  { id: 3, name: "Camera 3", type: "Camera Familiare", capacity: 4, status: "available" },
+  { id: 4, name: "Camera 4", type: "Camera Piccola", capacity: 2, status: "available" },
+  { id: 5, name: "Camera 5", type: "Camera Familiare", capacity: 4, status: "available" },
+  { id: 6, name: "Camera 6", type: "Camera Familiare", capacity: 4, status: "available" },
 ];
 
 const Index = () => {
@@ -26,10 +28,12 @@ const Index = () => {
   const [selectedRoomId, setSelectedRoomId] = useState<number | undefined>();
   const [editingBooking, setEditingBooking] = useState<Booking | undefined>();
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const { toast } = useToast();
 
-  const handleAddBooking = (roomId?: number) => {
+  const handleAddBooking = (roomId?: number, date?: Date) => {
     setSelectedRoomId(roomId);
+    setSelectedDate(date);
     setEditingBooking(undefined);
     setShowBookingForm(true);
   };
@@ -75,6 +79,7 @@ const Index = () => {
     }
     setShowBookingForm(false);
     setSelectedRoomId(undefined);
+    setSelectedDate(undefined);
     setEditingBooking(undefined);
   };
 
@@ -121,11 +126,14 @@ const Index = () => {
           <BookingForm
             rooms={rooms}
             selectedRoomId={selectedRoomId}
+            selectedDate={selectedDate}
             booking={editingBooking}
+            bookings={bookings}
             onSubmit={handleSubmitBooking}
             onCancel={() => {
               setShowBookingForm(false);
               setSelectedRoomId(undefined);
+              setSelectedDate(undefined);
               setEditingBooking(undefined);
             }}
           />
@@ -207,8 +215,9 @@ const Index = () => {
 
         {/* Main Content */}
         <Tabs defaultValue="rooms" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="rooms">Camere</TabsTrigger>
+            <TabsTrigger value="calendar">Calendario</TabsTrigger>
             <TabsTrigger value="bookings">Prenotazioni</TabsTrigger>
           </TabsList>
 
@@ -224,6 +233,15 @@ const Index = () => {
                 />
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="calendar" className="space-y-6">
+            <CalendarView
+              bookings={bookings}
+              rooms={rooms}
+              onAddBooking={(date) => handleAddBooking(undefined, date)}
+              onEditBooking={handleEditBooking}
+            />
           </TabsContent>
 
           <TabsContent value="bookings" className="space-y-6">

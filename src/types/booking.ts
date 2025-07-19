@@ -2,6 +2,7 @@ export interface Room {
   id: number;
   name: string;
   type: string;
+  capacity: number;
   status: 'available' | 'occupied' | 'maintenance';
 }
 

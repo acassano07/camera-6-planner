@@ -5,29 +5,38 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { X, Save } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { X, Save, Sparkles } from "lucide-react";
 import { BookingFormData, Room, Booking } from "@/types/booking";
+import { findOptimalRoom } from "@/utils/roomAssignment";
 
 interface BookingFormProps {
   rooms: Room[];
   selectedRoomId?: number;
+  selectedDate?: Date;
   booking?: Booking;
+  bookings?: Booking[];
   onSubmit: (data: BookingFormData) => void;
   onCancel: () => void;
 }
 
-export function BookingForm({ rooms, selectedRoomId, booking, onSubmit, onCancel }: BookingFormProps) {
+export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, bookings = [], onSubmit, onCancel }: BookingFormProps) {
   const [formData, setFormData] = useState<BookingFormData>({
     roomId: selectedRoomId || booking?.roomId || rooms[0]?.id || 1,
     guestName: booking?.guestName || '',
     guestEmail: booking?.guestEmail || '',
     guestPhone: booking?.guestPhone || '',
-    checkIn: booking?.checkIn ? booking.checkIn.toISOString().split('T')[0] : '',
+    checkIn: booking?.checkIn ? booking.checkIn.toISOString().split('T')[0] : 
+             selectedDate ? selectedDate.toISOString().split('T')[0] : '',
     checkOut: booking?.checkOut ? booking.checkOut.toISOString().split('T')[0] : '',
     guests: booking?.guests || 1,
     notes: booking?.notes || '',
     totalPrice: booking?.totalPrice || 0,
   });
+  
+  const [autoAssign, setAutoAssign] = useState(!selectedRoomId && !booking);
+  const [assignmentSuggestion, setAssignmentSuggestion] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +48,49 @@ export function BookingForm({ rooms, selectedRoomId, booking, onSubmit, onCancel
       ...prev,
       [field]: value
     }));
+    
+    // Aggiorna automaticamente la camera se l'assegnazione automatica è attiva
+    if (autoAssign && (field === 'guests' || field === 'checkIn' || field === 'checkOut')) {
+      const updatedData = { ...formData, [field]: value };
+      if (updatedData.checkIn && updatedData.checkOut && updatedData.guests) {
+        const result = findOptimalRoom(
+          updatedData.guests,
+          new Date(updatedData.checkIn),
+          new Date(updatedData.checkOut),
+          rooms,
+          bookings
+        );
+        
+        if (result.roomId) {
+          setFormData(prev => ({ ...prev, roomId: result.roomId! }));
+          setAssignmentSuggestion(result.reason);
+        } else {
+          setAssignmentSuggestion(result.reason);
+        }
+      }
+    }
+  };
+
+  const handleAutoAssignToggle = (enabled: boolean) => {
+    setAutoAssign(enabled);
+    if (enabled && formData.checkIn && formData.checkOut && formData.guests) {
+      const result = findOptimalRoom(
+        formData.guests,
+        new Date(formData.checkIn),
+        new Date(formData.checkOut),
+        rooms,
+        bookings
+      );
+      
+      if (result.roomId) {
+        setFormData(prev => ({ ...prev, roomId: result.roomId! }));
+        setAssignmentSuggestion(result.reason);
+      } else {
+        setAssignmentSuggestion(result.reason);
+      }
+    } else {
+      setAssignmentSuggestion('');
+    }
   };
 
   const availableRooms = rooms.filter(room => 
@@ -60,12 +112,40 @@ export function BookingForm({ rooms, selectedRoomId, booking, onSubmit, onCancel
       
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!booking && (
+            <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Assegnazione Automatica Camera
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    L'algoritmo sceglierà automaticamente la camera ottimale
+                  </p>
+                </div>
+                <Switch
+                  checked={autoAssign}
+                  onCheckedChange={handleAutoAssignToggle}
+                />
+              </div>
+              {assignmentSuggestion && (
+                <Alert>
+                  <AlertDescription className="text-sm">
+                    {assignmentSuggestion}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="room">Camera</Label>
               <Select
                 value={formData.roomId.toString()}
                 onValueChange={(value) => handleInputChange('roomId', parseInt(value))}
+                disabled={autoAssign}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleziona camera" />
@@ -73,7 +153,7 @@ export function BookingForm({ rooms, selectedRoomId, booking, onSubmit, onCancel
                 <SelectContent>
                   {availableRooms.map((room) => (
                     <SelectItem key={room.id} value={room.id.toString()}>
-                      {room.name} - {room.type}
+                      {room.name} - {room.type} ({room.capacity} posti)
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -90,7 +170,7 @@ export function BookingForm({ rooms, selectedRoomId, booking, onSubmit, onCancel
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4].map((num) => (
+                  {[1, 2, 3, 4, 5, 6].map((num) => (
                     <SelectItem key={num} value={num.toString()}>
                       {num} {num === 1 ? 'ospite' : 'ospiti'}
                     </SelectItem>
