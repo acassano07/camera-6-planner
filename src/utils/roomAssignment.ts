@@ -1,5 +1,20 @@
 import { Room, Booking } from "@/types/booking";
 
+const ROOM_PRIORITY = {
+  singola: [2, 1, 4, 5, 6, 3],
+  matrimoniale: [1, 2, 4, 5, 6, 3],
+  tripla: [3, 5, 6],
+  quadrupla: [3, 5, 6],
+};
+
+const getRoomTypeForGuests = (guests: number): keyof typeof ROOM_PRIORITY | null => {
+  if (guests === 1) return "singola";
+  if (guests === 2) return "matrimoniale";
+  if (guests === 3) return "tripla";
+  if (guests === 4) return "quadrupla";
+  return null;
+};
+
 interface AssignmentResult {
   roomId: number | null;
   reason: string;
@@ -12,27 +27,24 @@ export function findOptimalRoom(
   rooms: Room[],
   existingBookings: Booking[]
 ): AssignmentResult {
-  // Filtra le camere disponibili per il periodo richiesto
+  const roomType = getRoomTypeForGuests(guests);
+  if (!roomType) {
+    return { roomId: null, reason: "Numero di ospiti non supportato" };
+  }
+
+  const priorityOrder = ROOM_PRIORITY[roomType];
+
   const availableRooms = rooms.filter(room => {
-    if (room.status !== 'available') return false;
-    
-    // Verifica che la camera abbia capacità sufficiente
+    if (room.status !== "available" || !priorityOrder.includes(room.id)) return false;
     if (room.capacity < guests) return false;
-    
-    // Verifica che non ci siano conflitti con prenotazioni esistenti
+
     const hasConflict = existingBookings.some(booking => {
-      if (booking.roomId !== room.id || booking.status !== 'confirmed') return false;
-      
+      if (booking.rooms.every(r => r.roomId !== room.id) || booking.status !== "confirmed") return false;
       const bookingStart = new Date(booking.checkIn);
       const bookingEnd = new Date(booking.checkOut);
-      
-      // Controlla sovrapposizioni
-      return (
-        (checkIn < bookingEnd && checkOut > bookingStart) ||
-        (checkIn <= bookingStart && checkOut >= bookingEnd)
-      );
+      return checkIn < bookingEnd && checkOut > bookingStart;
     });
-    
+
     return !hasConflict;
   });
 
@@ -40,81 +52,53 @@ export function findOptimalRoom(
     return { roomId: null, reason: "Nessuna camera disponibile per il periodo selezionato" };
   }
 
-  // Algoritmo di ottimizzazione:
-  // 1. Priorità alle camere con capacità esatta (per minimizzare sprechi)
-  // 2. Se non disponibili, scegli la camera con meno posti liberi
-  // 3. In caso di parità, scegli quella con ID più basso
+  availableRooms.sort((a, b) => {
+    const priorityA = priorityOrder.indexOf(a.id);
+    const priorityB = priorityOrder.indexOf(b.id);
+    return priorityA - priorityB;
+  });
 
-  // Cerca camere con capacità esatta
-  const exactMatchRooms = availableRooms.filter(room => room.capacity === guests);
-  if (exactMatchRooms.length > 0) {
-    // Ordina per ID crescente e prendi la prima
-    const selectedRoom = exactMatchRooms.sort((a, b) => a.id - b.id)[0];
-    return {
-      roomId: selectedRoom.id,
-      reason: `Camera ${selectedRoom.name} assegnata automaticamente (capacità perfetta: ${selectedRoom.capacity} posti)`
-    };
-  }
+  const selectedRoom = availableRooms[0];
 
-  // Se non ci sono corrispondenze esatte, cerca la camera più piccola che può ospitare gli ospiti
-  const suitableRooms = availableRooms
-    .filter(room => room.capacity >= guests)
-    .sort((a, b) => {
-      // Prima per capacità crescente (meno sprechi)
-      if (a.capacity !== b.capacity) return a.capacity - b.capacity;
-      // Poi per ID crescente
-      return a.id - b.id;
-    });
-
-  if (suitableRooms.length > 0) {
-    const selectedRoom = suitableRooms[0];
-    const wastedSpots = selectedRoom.capacity - guests;
-    return {
-      roomId: selectedRoom.id,
-      reason: `Camera ${selectedRoom.name} assegnata automaticamente (${selectedRoom.capacity} posti, ${wastedSpots} posto/i non utilizzati)`
-    };
-  }
-
-  return { roomId: null, reason: "Errore nell'algoritmo di assegnazione" };
+  return {
+    roomId: selectedRoom.id,
+    reason: `Camera ${selectedRoom.name} assegnata in base alla priorità per ${roomType}`,
+  };
 }
 
-export function getOccupancyStats(
-  date: Date,
+export function optimizeRoomAssignments(
+  futureBookings: Booking[],
   rooms: Room[],
-  bookings: Booking[]
-): {
-  totalCapacity: number;
-  occupiedSpots: number;
-  occupiedRooms: number;
-  availableRooms: number;
-  occupancyRate: number;
-} {
-  const totalCapacity = rooms.reduce((sum, room) => sum + room.capacity, 0);
-  
-  const dateStart = new Date(date);
-  dateStart.setHours(0, 0, 0, 0);
-  const dateEnd = new Date(date);
-  dateEnd.setHours(23, 59, 59, 999);
-  
-  const activeBookings = bookings.filter(booking => {
-    if (booking.status !== 'confirmed') return false;
-    
-    const checkIn = new Date(booking.checkIn);
-    const checkOut = new Date(booking.checkOut);
-    
-    return checkIn <= dateEnd && checkOut >= dateStart;
-  });
-  
-  const occupiedSpots = activeBookings.reduce((sum, booking) => sum + booking.guests, 0);
-  const occupiedRooms = new Set(activeBookings.map(b => b.roomId)).size;
-  const availableRooms = rooms.length - occupiedRooms;
-  const occupancyRate = totalCapacity > 0 ? (occupiedSpots / totalCapacity) * 100 : 0;
-  
-  return {
-    totalCapacity,
-    occupiedSpots,
-    occupiedRooms,
-    availableRooms,
-    occupancyRate
-  };
+  allBookings: Booking[]
+): { newBookings: Booking[], changes: { from: number, to: number, bookingId: string }[] } {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const bookingsToOptimize = futureBookings.filter(b => new Date(b.checkIn) > today && b.status === 'confirmed');
+
+    // Sort bookings to process them in a specific order, e.g., by check-in date
+    bookingsToOptimize.sort((a, b) => new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime());
+
+    let currentBookings = [...allBookings];
+    const changes: { from: number, to: number, bookingId: string }[] = [];
+
+    for (const booking of bookingsToOptimize) {
+        const mainRoom = booking.rooms[0]; // Assuming one room per booking for now
+        const guests = mainRoom.guests;
+
+        // Find the best room for this booking, considering all other bookings
+        const otherBookings = currentBookings.filter(b => b.id !== booking.id);
+        const result = findOptimalRoom(guests, new Date(booking.checkIn), new Date(booking.checkOut), rooms, otherBookings);
+
+        if (result.roomId && result.roomId !== mainRoom.roomId) {
+            changes.push({ from: mainRoom.roomId, to: result.roomId, bookingId: booking.id });
+            // Update the booking in our temporary list
+            const bookingIndex = currentBookings.findIndex(b => b.id === booking.id);
+            if (bookingIndex !== -1) {
+                currentBookings[bookingIndex].rooms[0].roomId = result.roomId;
+            }
+        }
+    }
+
+    return { newBookings: currentBookings, changes };
 }
