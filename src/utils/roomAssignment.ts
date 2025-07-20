@@ -40,40 +40,42 @@ export function findOptimalRoom(
     return { roomId: null, reason: "Nessuna camera disponibile per il periodo selezionato" };
   }
 
-  // Algoritmo di ottimizzazione:
-  // 1. Priorità alle camere con capacità esatta (per minimizzare sprechi)
-  // 2. Se non disponibili, scegli la camera con meno posti liberi
-  // 3. In caso di parità, scegli quella con ID più basso
+  // Algoritmo di ottimizzazione intelligente con ordine preferito:
+  // Singola → 2, 1, 4, 5, 6, 3
+  // Matrimoniale → 1, 2, 4, 5, 6, 3  
+  // Tripla/Quadrupla → 3, 5, 6
 
-  // Cerca camere con capacità esatta
-  const exactMatchRooms = availableRooms.filter(room => room.capacity === guests);
-  if (exactMatchRooms.length > 0) {
-    // Ordina per ID crescente e prendi la prima
-    const selectedRoom = exactMatchRooms.sort((a, b) => a.id - b.id)[0];
-    return {
-      roomId: selectedRoom.id,
-      reason: `Camera ${selectedRoom.name} assegnata automaticamente (capacità perfetta: ${selectedRoom.capacity} posti)`
-    };
+  const getPreferredOrder = (guestCount: number): number[] => {
+    if (guestCount === 1) return [2, 1, 4, 5, 6, 3];
+    if (guestCount === 2) return [1, 2, 4, 5, 6, 3];
+    return [3, 5, 6, 1, 2, 4]; // tripla/quadrupla
+  };
+
+  const preferredOrder = getPreferredOrder(guests);
+  
+  // Cerca prima camere con capacità esatta seguendo l'ordine preferito
+  for (const roomId of preferredOrder) {
+    const room = availableRooms.find(r => r.id === roomId && r.capacity === guests);
+    if (room) {
+      return {
+        roomId: room.id,
+        reason: `Camera ${room.name} assegnata automaticamente (capacità perfetta: ${room.capacity} posti, ordine preferito)`
+      };
+    }
   }
 
-  // Se non ci sono corrispondenze esatte, cerca la camera più piccola che può ospitare gli ospiti
-  const suitableRooms = availableRooms
-    .filter(room => room.capacity >= guests)
-    .sort((a, b) => {
-      // Prima per capacità crescente (meno sprechi)
-      if (a.capacity !== b.capacity) return a.capacity - b.capacity;
-      // Poi per ID crescente
-      return a.id - b.id;
-    });
-
-  if (suitableRooms.length > 0) {
-    const selectedRoom = suitableRooms[0];
-    const wastedSpots = selectedRoom.capacity - guests;
-    return {
-      roomId: selectedRoom.id,
-      reason: `Camera ${selectedRoom.name} assegnata automaticamente (${selectedRoom.capacity} posti, ${wastedSpots} posto/i non utilizzati)`
-    };
+  // Se non ci sono corrispondenze esatte, cerca seguendo l'ordine preferito
+  for (const roomId of preferredOrder) {
+    const room = availableRooms.find(r => r.id === roomId && r.capacity >= guests);
+    if (room) {
+      const wastedSpots = room.capacity - guests;
+      return {
+        roomId: room.id,
+        reason: `Camera ${room.name} assegnata automaticamente (${room.capacity} posti, ${wastedSpots} posto/i non utilizzati, ordine preferito)`
+      };
+    }
   }
+
 
   return { roomId: null, reason: "Errore nell'algoritmo di assegnazione" };
 }

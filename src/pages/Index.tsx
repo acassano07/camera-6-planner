@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Hotel, Calendar, Users, TrendingUp } from "lucide-react";
@@ -13,12 +15,12 @@ import { useToast } from "@/hooks/use-toast";
 import { findOptimalRoom, getOccupancyStats } from "@/utils/roomAssignment";
 
 const initialRooms: Room[] = [
-  { id: 1, name: "Camera 1", type: "Camera Standard", capacity: 3, status: "available" },
-  { id: 2, name: "Camera 2", type: "Camera Standard", capacity: 3, status: "available" },
+  { id: 1, name: "Camera 1", type: "Camera Tripla", capacity: 3, status: "available" },
+  { id: 2, name: "Camera 2", type: "Camera Tripla", capacity: 3, status: "available" },
   { id: 3, name: "Camera 3", type: "Camera Familiare", capacity: 4, status: "available" },
-  { id: 4, name: "Camera 4", type: "Camera Piccola", capacity: 2, status: "available" },
+  { id: 4, name: "Camera 4", type: "Camera Matrimoniale", capacity: 2, status: "available" },
   { id: 5, name: "Camera 5", type: "Camera Familiare", capacity: 4, status: "available" },
-  { id: 6, name: "Camera 6", type: "Camera Familiare", capacity: 4, status: "available" },
+  { id: 6, name: "Camera 6", type: "Camera Tripla", capacity: 3, status: "available" },
 ];
 
 const Index = () => {
@@ -70,6 +72,7 @@ const Index = () => {
         checkOut: new Date(data.checkOut),
         status: 'confirmed',
         createdAt: new Date(),
+        guestEmail: data.guestEmail || undefined,
       };
       setBookings(prev => [...prev, newBooking]);
       toast({
@@ -214,11 +217,12 @@ const Index = () => {
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="rooms" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="rooms">Camere</TabsTrigger>
+        <Tabs defaultValue="calendar" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="calendar">Calendario</TabsTrigger>
-            <TabsTrigger value="bookings">Prenotazioni</TabsTrigger>
+            <TabsTrigger value="rooms">Camere</TabsTrigger>
+            <TabsTrigger value="settings">Impostazioni</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
 
           <TabsContent value="rooms" className="space-y-6">
@@ -244,60 +248,75 @@ const Index = () => {
             />
           </TabsContent>
 
-          <TabsContent value="bookings" className="space-y-6">
-            <div className="flex flex-wrap gap-2 items-center">
-              <Button
-                variant={selectedRoomFilter === null ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedRoomFilter(null)}
-              >
-                Tutte le Camere
-              </Button>
-              {rooms.map((room) => (
-                <Button
-                  key={room.id}
-                  variant={selectedRoomFilter === room.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedRoomFilter(room.id)}
-                >
-                  {room.name}
-                  <Badge variant="secondary" className="ml-2">
-                    {bookings.filter(b => b.roomId === room.id && b.status === 'confirmed').length}
-                  </Badge>
-                </Button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBookings.length > 0 ? (
-                filteredBookings.map((booking) => (
-                  <BookingCard
-                    key={booking.id}
-                    booking={booking}
-                    roomName={getRoomName(booking.roomId)}
-                    onEdit={handleEditBooking}
-                    onDelete={handleDeleteBooking}
-                  />
-                ))
-              ) : (
-                <div className="col-span-full text-center py-12">
-                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-muted-foreground">
-                    Nessuna prenotazione trovata
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {selectedRoomFilter 
-                      ? "Non ci sono prenotazioni per questa camera."
-                      : "Inizia creando la tua prima prenotazione."
-                    }
-                  </p>
-                  <Button onClick={() => handleAddBooking()}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Crea Prima Prenotazione
-                  </Button>
+          <TabsContent value="settings" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Impostazioni Prezzi</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Prezzo camera matrimoniale (2 adulti)</Label>
+                    <Input type="number" placeholder="45" />
+                  </div>
+                  <div>
+                    <Label>Prezzo terzo adulto</Label>
+                    <Input type="number" placeholder="15" />
+                  </div>
+                  <div>
+                    <Label>Prezzo quarto adulto</Label>
+                    <Input type="number" placeholder="15" />
+                  </div>
+                  <div>
+                    <Label>Prezzo bambini (sotto 12 anni)</Label>
+                    <Input type="number" placeholder="0" />
+                  </div>
                 </div>
-              )}
+                <Button>Salva Impostazioni</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="analytics" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-center">
+                    <Users className="h-8 w-8 text-primary mx-auto mb-2" />
+                    <p className="text-2xl font-bold">{bookings.reduce((sum, b) => sum + b.guests, 0)}</p>
+                    <p className="text-sm text-muted-foreground">Ospiti Totali (Storico)</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-center">
+                    <TrendingUp className="h-8 w-8 text-success mx-auto mb-2" />
+                    <p className="text-2xl font-bold">€{totalRevenue.toFixed(2)}</p>
+                    <p className="text-sm text-muted-foreground">Ricavi Totali</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-center">
+                    <Calendar className="h-8 w-8 text-accent mx-auto mb-2" />
+                    <p className="text-2xl font-bold">{confirmedBookings}</p>
+                    <p className="text-sm text-muted-foreground">Prenotazioni Totali</p>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Grafico Ricavi Mensili</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64 flex items-center justify-center text-muted-foreground">
+                  <p>Grafico ricavi in sviluppo</p>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { X, Save, Sparkles } from "lucide-react";
 import { BookingFormData, Room, Booking } from "@/types/booking";
 import { findOptimalRoom } from "@/utils/roomAssignment";
+import { calculateTouristTax, calculatePrice } from "@/utils/pricing";
 
 interface BookingFormProps {
   rooms: Room[];
@@ -33,6 +34,9 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
     guests: booking?.guests || 1,
     notes: booking?.notes || '',
     totalPrice: booking?.totalPrice || 0,
+    clientType: booking?.clientType || 'private',
+    touristTax: booking?.touristTax || 0,
+    touristTaxExemptions: booking?.touristTaxExemptions || [],
   });
   
   const [autoAssign, setAutoAssign] = useState(!selectedRoomId && !booking);
@@ -43,12 +47,41 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
     onSubmit(formData);
   };
 
-  const handleInputChange = (field: keyof BookingFormData, value: string | number) => {
+  const handleInputChange = (field: keyof BookingFormData, value: string | number | boolean[]) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
     
+    // Aggiorna automaticamente prezzi e tasse
+    if (field === 'guests' || field === 'checkIn' || field === 'checkOut' || field === 'clientType') {
+      const updatedData = { ...formData, [field]: value };
+      
+      // Calcola prezzo automatico
+      if (updatedData.guests && updatedData.clientType) {
+        const price = calculatePrice(updatedData.guests, updatedData.clientType);
+        updatedData.totalPrice = price;
+      }
+      
+      // Calcola tassa di soggiorno
+      if (updatedData.checkIn && updatedData.checkOut && updatedData.guests) {
+        const tax = calculateTouristTax(
+          updatedData.guests,
+          new Date(updatedData.checkIn),
+          new Date(updatedData.checkOut),
+          updatedData.touristTaxExemptions
+        );
+        updatedData.touristTax = tax;
+        
+        // Inizializza esenzioni se non presenti
+        if (updatedData.touristTaxExemptions.length !== updatedData.guests) {
+          updatedData.touristTaxExemptions = Array(updatedData.guests).fill(false);
+        }
+      }
+      
+      setFormData(prev => ({ ...prev, ...updatedData }));
+    }
+
     // Aggiorna automaticamente la camera se l'assegnazione automatica è attiva
     if (autoAssign && (field === 'guests' || field === 'checkIn' || field === 'checkOut')) {
       const updatedData = { ...formData, [field]: value };
@@ -217,14 +250,13 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="guestEmail">Email</Label>
+              <Label htmlFor="guestEmail">Email (opzionale)</Label>
               <Input
                 id="guestEmail"
                 type="email"
-                value={formData.guestEmail}
+                value={formData.guestEmail || ''}
                 onChange={(e) => handleInputChange('guestEmail', e.target.value)}
                 placeholder="email@esempio.com"
-                required
               />
             </div>
 
@@ -241,18 +273,69 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="totalPrice">Prezzo Totale (€)</Label>
-            <Input
-              id="totalPrice"
-              type="number"
-              min="0"
-              step="0.01"
-              value={formData.totalPrice}
-              onChange={(e) => handleInputChange('totalPrice', parseFloat(e.target.value))}
-              placeholder="0.00"
-              required
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="clientType">Tipo Cliente</Label>
+              <Select
+                value={formData.clientType}
+                onValueChange={(value: 'private' | 'booking') => handleInputChange('clientType', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">Privato</SelectItem>
+                  <SelectItem value="booking">Booking.com</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="totalPrice">
+                {formData.clientType === 'private' ? 'Prezzo Totale (€)' : 'Prezzo (gestito da Booking)'}
+              </Label>
+              <Input
+                id="totalPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                value={formData.totalPrice}
+                onChange={(e) => handleInputChange('totalPrice', parseFloat(e.target.value))}
+                placeholder="0.00"
+                disabled={formData.clientType === 'booking'}
+                required={formData.clientType === 'private'}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <Label>Tassa di Soggiorno: €{formData.touristTax.toFixed(2)}</Label>
+              <span className="text-sm text-muted-foreground">
+                {formData.checkIn && (new Date(formData.checkIn).getMonth() + 1 >= 5 && new Date(formData.checkIn).getMonth() + 1 <= 12) ? '2€' : '1.50€'} per persona/notte
+              </span>
+            </div>
+            
+            {formData.guests > 0 && (
+              <div className="space-y-2">
+                <Label>Esenzioni Tassa di Soggiorno</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Array.from({ length: formData.guests }, (_, i) => (
+                    <div key={i} className="flex items-center space-x-2">
+                      <Switch
+                        checked={formData.touristTaxExemptions[i] || false}
+                        onCheckedChange={(checked) => {
+                          const newExemptions = [...formData.touristTaxExemptions];
+                          newExemptions[i] = checked;
+                          handleInputChange('touristTaxExemptions', newExemptions);
+                        }}
+                      />
+                      <Label className="text-sm">Ospite {i + 1}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
