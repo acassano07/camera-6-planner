@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { X, Save, Sparkles } from "lucide-react";
 import { BookingFormData, Room, Booking } from "@/types/booking";
 import { findOptimalRoom } from "@/utils/roomAssignment";
+import { findOptimalRoomAdvanced } from "@/utils/advancedRoomAssignment";
 import { calculateTouristTax, calculatePrice } from "@/utils/pricing";
 
 interface BookingFormProps {
@@ -37,9 +38,11 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
     clientType: booking?.clientType || 'private',
     touristTax: booking?.touristTax || 0,
     touristTaxExemptions: booking?.touristTaxExemptions || [],
+    childrenUnder12: booking?.childrenUnder12 || [],
+    lockedRoom: booking?.lockedRoom || false,
   });
   
-  const [autoAssign, setAutoAssign] = useState(!selectedRoomId && !booking);
+  const [autoAssign, setAutoAssign] = useState(!selectedRoomId && !booking && !formData.lockedRoom);
   const [assignmentSuggestion, setAssignmentSuggestion] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -47,7 +50,7 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
     onSubmit(formData);
   };
 
-  const handleInputChange = (field: keyof BookingFormData, value: string | number | boolean[]) => {
+  const handleInputChange = (field: keyof BookingFormData, value: string | number | boolean[] | boolean) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -69,7 +72,8 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
           updatedData.guests,
           new Date(updatedData.checkIn),
           new Date(updatedData.checkOut),
-          updatedData.touristTaxExemptions
+          updatedData.touristTaxExemptions,
+          updatedData.childrenUnder12
         );
         updatedData.touristTax = tax;
         
@@ -77,21 +81,27 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
         if (updatedData.touristTaxExemptions.length !== updatedData.guests) {
           updatedData.touristTaxExemptions = Array(updatedData.guests).fill(false);
         }
+        if (updatedData.childrenUnder12.length !== updatedData.guests) {
+          updatedData.childrenUnder12 = Array(updatedData.guests).fill(false);
+        }
       }
       
       setFormData(prev => ({ ...prev, ...updatedData }));
     }
 
     // Aggiorna automaticamente la camera se l'assegnazione automatica è attiva
-    if (autoAssign && (field === 'guests' || field === 'checkIn' || field === 'checkOut')) {
+    if (autoAssign && !formData.lockedRoom && (field === 'guests' || field === 'checkIn' || field === 'checkOut')) {
       const updatedData = { ...formData, [field]: value };
       if (updatedData.checkIn && updatedData.checkOut && updatedData.guests) {
-        const result = findOptimalRoom(
+        const result = findOptimalRoomAdvanced(
           updatedData.guests,
           new Date(updatedData.checkIn),
           new Date(updatedData.checkOut),
           rooms,
-          bookings
+          bookings,
+          [], // closures
+          false, // allowRoomMoves
+          formData.lockedRoom ? formData.roomId : undefined
         );
         
         if (result.roomId) {
@@ -175,22 +185,37 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="room">Camera</Label>
-              <Select
-                value={formData.roomId.toString()}
-                onValueChange={(value) => handleInputChange('roomId', parseInt(value))}
-                disabled={autoAssign}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona camera" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableRooms.map((room) => (
-                    <SelectItem key={room.id} value={room.id.toString()}>
-                      {room.name} - {room.type} ({room.capacity} posti)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Select
+                  value={formData.roomId.toString()}
+                  onValueChange={(value) => handleInputChange('roomId', parseInt(value))}
+                  disabled={autoAssign && !formData.lockedRoom}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleziona camera" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableRooms.map((room) => (
+                      <SelectItem key={room.id} value={room.id.toString()}>
+                        {room.name} - {room.type} ({room.capacity} posti)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    checked={formData.lockedRoom || false}
+                    onCheckedChange={(checked) => {
+                      handleInputChange('lockedRoom', checked);
+                      if (checked) {
+                        setAutoAssign(false);
+                      }
+                    }}
+                  />
+                  <Label className="text-xs">Blocca camera (bypassa algoritmo)</Label>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -241,9 +266,9 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
             <Label htmlFor="guestName">Nome Ospite</Label>
             <Input
               id="guestName"
-              value={formData.guestName}
-              onChange={(e) => handleInputChange('guestName', e.target.value)}
-              placeholder="Nome e cognome"
+                value={formData.guestName}
+                onChange={(e) => handleInputChange('guestName', e.target.value)}
+                placeholder="Nome e cognome"
               required
             />
           </div>
@@ -317,20 +342,36 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
             </div>
             
             {formData.guests > 0 && (
-              <div className="space-y-2">
-                <Label>Esenzioni Tassa di Soggiorno</Label>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-3">
+                <Label>Gestione Ospiti</Label>
+                <div className="grid grid-cols-1 gap-3">
                   {Array.from({ length: formData.guests }, (_, i) => (
-                    <div key={i} className="flex items-center space-x-2">
-                      <Switch
-                        checked={formData.touristTaxExemptions[i] || false}
-                        onCheckedChange={(checked) => {
-                          const newExemptions = [...formData.touristTaxExemptions];
-                          newExemptions[i] = checked;
-                          handleInputChange('touristTaxExemptions', newExemptions);
-                        }}
-                      />
-                      <Label className="text-sm">Ospite {i + 1}</Label>
+                    <div key={i} className="flex items-center justify-between p-2 bg-muted/20 rounded">
+                      <span className="text-sm font-medium">Ospite {i + 1}</span>
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            checked={formData.childrenUnder12[i] || false}
+                            onCheckedChange={(checked) => {
+                              const newChildren = [...formData.childrenUnder12];
+                              newChildren[i] = checked;
+                              handleInputChange('childrenUnder12', newChildren);
+                            }}
+                          />
+                          <Label className="text-xs">Under 12</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            checked={formData.touristTaxExemptions[i] || false}
+                            onCheckedChange={(checked) => {
+                              const newExemptions = [...formData.touristTaxExemptions];
+                              newExemptions[i] = checked;
+                              handleInputChange('touristTaxExemptions', newExemptions);
+                            }}
+                          />
+                          <Label className="text-xs">Esenzione Manuale</Label>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

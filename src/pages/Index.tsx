@@ -10,9 +10,11 @@ import { RoomCard } from "@/components/RoomCard";
 import { BookingCard } from "@/components/BookingCard";
 import { BookingForm } from "@/components/BookingForm";
 import { Calendar as CalendarView } from "@/components/Calendar";
+import { RoomOptimizer } from "@/components/RoomOptimizer";
 import { Room, Booking, BookingFormData } from "@/types/booking";
 import { useToast } from "@/hooks/use-toast";
 import { findOptimalRoom, getOccupancyStats } from "@/utils/roomAssignment";
+import { BookingMove } from "@/utils/advancedRoomAssignment";
 
 const initialRooms: Room[] = [
   { id: 1, name: "Camera 1", type: "Camera Tripla", capacity: 3, status: "available" },
@@ -73,6 +75,8 @@ const Index = () => {
         status: 'confirmed',
         createdAt: new Date(),
         guestEmail: data.guestEmail || undefined,
+        childrenUnder12: data.childrenUnder12 || [],
+        hasArrived: false,
       };
       setBookings(prev => [...prev, newBooking]);
       toast({
@@ -93,6 +97,26 @@ const Index = () => {
       title: "Prenotazione cancellata",
       description: `La prenotazione di ${booking?.guestName} è stata cancellata.`,
       variant: "destructive",
+    });
+  };
+
+  const handleApplyOptimization = (moves: BookingMove[]) => {
+    const updatedBookings = [...bookings];
+    
+    moves.forEach(move => {
+      const bookingIndex = updatedBookings.findIndex(b => b.id === move.bookingId);
+      if (bookingIndex !== -1) {
+        updatedBookings[bookingIndex] = {
+          ...updatedBookings[bookingIndex],
+          roomId: move.toRoomId
+        };
+      }
+    });
+    
+    setBookings(updatedBookings);
+    toast({
+      title: "Ottimizzazione applicata",
+      description: `${moves.length} prenotazioni sono state spostate per ottimizzare l'occupazione.`,
     });
   };
 
@@ -226,6 +250,12 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="rooms" className="space-y-6">
+            <RoomOptimizer 
+              rooms={rooms}
+              bookings={bookings}
+              onApplyMoves={handleApplyOptimization}
+            />
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {rooms.map((room) => (
                 <RoomCard
@@ -256,12 +286,12 @@ const Index = () => {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>Prezzo camera matrimoniale (2 adulti)</Label>
+                    <Label>Prezzo matrimoniale (2 adulti)</Label>
                     <Input type="number" placeholder="45" />
                   </div>
                   <div>
                     <Label>Prezzo terzo adulto</Label>
-                    <Input type="number" placeholder="15" />
+                    <Input type="number" placeholder="19" />
                   </div>
                   <div>
                     <Label>Prezzo quarto adulto</Label>

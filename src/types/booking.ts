@@ -3,7 +3,9 @@ export interface Room {
   name: string;
   type: string;
   capacity: number;
-  status: 'available' | 'occupied' | 'maintenance';
+  status: 'available' | 'occupied' | 'maintenance' | 'closed';
+  closedUntil?: Date;
+  closureReason?: string;
 }
 
 export interface Booking {
@@ -22,6 +24,9 @@ export interface Booking {
   clientType: 'private' | 'booking';
   touristTax: number;
   touristTaxExemptions: boolean[];
+  childrenUnder12: boolean[];
+  lockedRoom?: boolean; // Indica se la camera è bloccata manualmente
+  hasArrived?: boolean; // Indica se il cliente è già arrivato
 }
 
 export interface BookingFormData {
@@ -37,4 +42,6 @@ export interface BookingFormData {
   clientType: 'private' | 'booking';
   touristTax: number;
   touristTaxExemptions: boolean[];
+  childrenUnder12: boolean[];
+  lockedRoom?: boolean;
 }
