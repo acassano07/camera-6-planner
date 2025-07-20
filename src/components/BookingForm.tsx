@@ -1,178 +1,279 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { X, Save, PlusCircle, Trash2, DollarSign, Info } from "lucide-react";
-import { BookingFormData, Room, Booking, BookedRoom, TouristTaxExemption } from "@/types/booking";
-import { calculateQuote, calculateTouristTax } from "@/utils/pricing";
+import { X, Save, Sparkles } from "lucide-react";
+import { BookingFormData, Room, Booking } from "@/types/booking";
+import { findOptimalRoom } from "@/utils/roomAssignment";
 
 interface BookingFormProps {
   rooms: Room[];
+  selectedRoomId?: number;
+  selectedDate?: Date;
   booking?: Booking;
+  bookings?: Booking[];
   onSubmit: (data: BookingFormData) => void;
   onCancel: () => void;
 }
 
-const EXEMPTION_OPTIONS: { id: TouristTaxExemption; label: string }[] = [
-    { id: "minore", label: "Minore di 12 anni" },
-    { id: "disabile", label: "Disabile" },
-    { id: "accompagnatore_disabile", label: "Accompagnatore disabile" },
-    { id: "autista", label: "Autista/Accompagnatore gruppo" },
-    { id: "forze_ordine", label: "Forze dell'ordine in servizio" },
-    { id: "sanitari", label: "Motivi sanitari" },
-    { id: "residente", label: "Residente a San Giovanni Rotondo" },
-    { id: "aire", label: "Iscritto AIRE" },
-];
-
-export function BookingForm({ rooms, booking, onSubmit, onCancel }: BookingFormProps) {
+export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, bookings = [], onSubmit, onCancel }: BookingFormProps) {
   const [formData, setFormData] = useState<BookingFormData>({
+    roomId: selectedRoomId || booking?.roomId || rooms[0]?.id || 1,
     guestName: booking?.guestName || '',
     guestEmail: booking?.guestEmail || '',
     guestPhone: booking?.guestPhone || '',
-    checkIn: booking?.checkIn ? new Date(booking.checkIn).toISOString().split('T')[0] : '',
-    checkOut: booking?.checkOut ? new Date(booking.checkOut).toISOString().split('T')[0] : '',
+    checkIn: booking?.checkIn ? booking.checkIn.toISOString().split('T')[0] : 
+             selectedDate ? selectedDate.toISOString().split('T')[0] : '',
+    checkOut: booking?.checkOut ? booking.checkOut.toISOString().split('T')[0] : '',
+    guests: booking?.guests || 1,
     notes: booking?.notes || '',
-    source: booking?.source || 'private',
-    rooms: booking?.rooms || [{ roomId: rooms[0]?.id || 1, guests: 1 }],
-    touristTaxExemptions: booking?.touristTaxExemptions || [],
+    totalPrice: booking?.totalPrice || 0,
   });
-
-  const [totalPrice, setTotalPrice] = useState(0);
-  const [touristTax, setTouristTax] = useState(0);
-
-  useEffect(() => {
-    const quote = calculateQuote(formData.rooms, new Date(formData.checkIn), new Date(formData.checkOut));
-    const tax = calculateTouristTax(formData);
-    setTotalPrice(quote);
-    setTouristTax(tax);
-  }, [formData]);
+  
+  const [autoAssign, setAutoAssign] = useState(!selectedRoomId && !booking);
+  const [assignmentSuggestion, setAssignmentSuggestion] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ ...formData, totalPrice: totalPrice + touristTax });
+    onSubmit(formData);
   };
 
-  const handleRoomChange = (index: number, field: keyof BookedRoom, value: number) => {
-    const newRooms = [...formData.rooms];
-    newRooms[index] = { ...newRooms[index], [field]: value };
-    setFormData(prev => ({ ...prev, rooms: newRooms }));
-  };
-
-  const addRoom = () => {
+  const handleInputChange = (field: keyof BookingFormData, value: string | number) => {
     setFormData(prev => ({
       ...prev,
-      rooms: [...prev.rooms, { roomId: rooms[1]?.id || 2, guests: 1 }]
+      [field]: value
     }));
+    
+    // Aggiorna automaticamente la camera se l'assegnazione automatica è attiva
+    if (autoAssign && (field === 'guests' || field === 'checkIn' || field === 'checkOut')) {
+      const updatedData = { ...formData, [field]: value };
+      if (updatedData.checkIn && updatedData.checkOut && updatedData.guests) {
+        const result = findOptimalRoom(
+          updatedData.guests,
+          new Date(updatedData.checkIn),
+          new Date(updatedData.checkOut),
+          rooms,
+          bookings
+        );
+        
+        if (result.roomId) {
+          setFormData(prev => ({ ...prev, roomId: result.roomId! }));
+          setAssignmentSuggestion(result.reason);
+        } else {
+          setAssignmentSuggestion(result.reason);
+        }
+      }
+    }
   };
 
-  const removeRoom = (index: number) => {
-    const newRooms = formData.rooms.filter((_, i) => i !== index);
-    setFormData(prev => ({ ...prev, rooms: newRooms }));
+  const handleAutoAssignToggle = (enabled: boolean) => {
+    setAutoAssign(enabled);
+    if (enabled && formData.checkIn && formData.checkOut && formData.guests) {
+      const result = findOptimalRoom(
+        formData.guests,
+        new Date(formData.checkIn),
+        new Date(formData.checkOut),
+        rooms,
+        bookings
+      );
+      
+      if (result.roomId) {
+        setFormData(prev => ({ ...prev, roomId: result.roomId! }));
+        setAssignmentSuggestion(result.reason);
+      } else {
+        setAssignmentSuggestion(result.reason);
+      }
+    } else {
+      setAssignmentSuggestion('');
+    }
   };
 
-  const handleExemptionChange = (exemptionId: TouristTaxExemption, checked: boolean) => {
-    setFormData(prev => ({
-        ...prev,
-        touristTaxExemptions: checked
-            ? [...(prev.touristTaxExemptions || []), exemptionId]
-            : (prev.touristTaxExemptions || []).filter(id => id !== exemptionId)
-    }));
-  };
+  const availableRooms = rooms.filter(room => 
+    room.status === 'available' || room.id === formData.roomId
+  );
 
   return (
-    <Card className="w-full max-w-3xl mx-auto">
+    <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl">{booking ? 'Modifica Prenotazione' : 'Nuova Prenotazione'}</CardTitle>
-          <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-4 w-4" /></Button>
+          <CardTitle className="text-xl">
+            {booking ? 'Modifica Prenotazione' : 'Nuova Prenotazione'}
+          </CardTitle>
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
       </CardHeader>
+      
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Room Selection */}
-          <div className="space-y-4">
-            <Label className="text-lg font-semibold">Camere</Label>
-            {formData.rooms.map((room, index) => (
-              <div key={index} className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
-                <Select value={room.roomId.toString()} onValueChange={(v) => handleRoomChange(index, 'roomId', parseInt(v))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{rooms.map(r => <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>)}</SelectContent>
-                </Select>
-                <Select value={room.guests.toString()} onValueChange={(v) => handleRoomChange(index, 'guests', parseInt(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{Array.from({ length: 4 }, (_, i) => i + 1).map(n => <SelectItem key={n} value={n.toString()}>{n} {n === 1 ? 'ospite' : 'ospiti'}</SelectItem>)}</SelectContent>
-                </Select>
-                {formData.rooms.length > 1 && <Button variant="ghost" size="icon" onClick={() => removeRoom(index)}><Trash2 className="h-4 w-4" /></Button>}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!booking && (
+            <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Assegnazione Automatica Camera
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    L'algoritmo sceglierà automaticamente la camera ottimale
+                  </p>
+                </div>
+                <Switch
+                  checked={autoAssign}
+                  onCheckedChange={handleAutoAssignToggle}
+                />
               </div>
-            ))}
-            <Button type="button" variant="outline" size="sm" onClick={addRoom}><PlusCircle className="h-4 w-4 mr-2" />Aggiungi Camera</Button>
-          </div>
+              {assignmentSuggestion && (
+                <Alert>
+                  <AlertDescription className="text-sm">
+                    {assignmentSuggestion}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
 
-          {/* Check-in/Check-out */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* ... existing check-in/out inputs ... */}
-          </div>
-
-          {/* Guest Info */}
-          <div className="space-y-4">
-            {/* ... existing guest inputs, email is not required ... */}
-          </div>
-
-          {/* Source */}
-          <div className="space-y-2">
-            <Label>Fonte Prenotazione</Label>
-            <Select value={formData.source} onValueChange={(v) => setFormData(p => ({...p, source: v as 'private' | 'booking.com'}))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+            <div className="space-y-2">
+              <Label htmlFor="room">Camera</Label>
+              <Select
+                value={formData.roomId.toString()}
+                onValueChange={(value) => handleInputChange('roomId', parseInt(value))}
+                disabled={autoAssign}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleziona camera" />
+                </SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="private">Privato</SelectItem>
-                    <SelectItem value="booking.com">Booking.com</SelectItem>
+                  {availableRooms.map((room) => (
+                    <SelectItem key={room.id} value={room.id.toString()}>
+                      {room.name} - {room.type} ({room.capacity} posti)
+                    </SelectItem>
+                  ))}
                 </SelectContent>
-            </Select>
-          </div>
+              </Select>
+            </div>
 
-          {/* Tourist Tax Exemptions */}
-          <div className="space-y-3">
-            <Label className="font-semibold">Esenzioni Tassa di Soggiorno</Label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {EXEMPTION_OPTIONS.map(opt => (
-                    <div key={opt.id} className="flex items-center gap-2">
-                        <Checkbox id={opt.id} checked={formData.touristTaxExemptions?.includes(opt.id)} onCheckedChange={(c) => handleExemptionChange(opt.id, !!c)} />
-                        <Label htmlFor={opt.id} className="text-sm font-normal">{opt.label}</Label>
-                    </div>
-                ))}
-            </div>
-          </div>
-
-          {/* Pricing */}
-          <div className="p-4 border rounded-lg bg-slate-50 space-y-3">
-            <div className="flex justify-between items-center font-medium">
-                <span>Preventivo Soggiorno</span>
-                <span>{totalPrice.toFixed(2)} €</span>
-            </div>
-            <div className="flex justify-between items-center text-sm text-muted-foreground">
-                <span>Tassa di Soggiorno</span>
-                <span>{touristTax.toFixed(2)} €</span>
-            </div>
-            <hr />
-            <div className="flex justify-between items-center text-lg font-bold">
-                <span>Totale</span>
-                <span>{(totalPrice + touristTax).toFixed(2)} €</span>
+            <div className="space-y-2">
+              <Label htmlFor="guests">Numero Ospiti</Label>
+              <Select
+                value={formData.guests.toString()}
+                onValueChange={(value) => handleInputChange('guests', parseInt(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5, 6].map((num) => (
+                    <SelectItem key={num} value={num.toString()}>
+                      {num} {num === 1 ? 'ospite' : 'ospiti'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          {/* Notes & Submit */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="checkIn">Check-in</Label>
+              <Input
+                id="checkIn"
+                type="date"
+                value={formData.checkIn}
+                onChange={(e) => handleInputChange('checkIn', e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="checkOut">Check-out</Label>
+              <Input
+                id="checkOut"
+                type="date"
+                value={formData.checkOut}
+                onChange={(e) => handleInputChange('checkOut', e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="notes">Note</Label>
-            <Textarea id="notes" value={formData.notes} onChange={(e) => setFormData(p => ({...p, notes: e.target.value}))} />
+            <Label htmlFor="guestName">Nome Ospite</Label>
+            <Input
+              id="guestName"
+              value={formData.guestName}
+              onChange={(e) => handleInputChange('guestName', e.target.value)}
+              placeholder="Nome e cognome"
+              required
+            />
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="guestEmail">Email</Label>
+              <Input
+                id="guestEmail"
+                type="email"
+                value={formData.guestEmail}
+                onChange={(e) => handleInputChange('guestEmail', e.target.value)}
+                placeholder="email@esempio.com"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="guestPhone">Telefono</Label>
+              <Input
+                id="guestPhone"
+                type="tel"
+                value={formData.guestPhone}
+                onChange={(e) => handleInputChange('guestPhone', e.target.value)}
+                placeholder="+39 123 456 7890"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="totalPrice">Prezzo Totale (€)</Label>
+            <Input
+              id="totalPrice"
+              type="number"
+              min="0"
+              step="0.01"
+              value={formData.totalPrice}
+              onChange={(e) => handleInputChange('totalPrice', parseFloat(e.target.value))}
+              placeholder="0.00"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="notes">Note (opzionale)</Label>
+            <Textarea
+              id="notes"
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              placeholder="Note aggiuntive sulla prenotazione..."
+              rows={3}
+            />
+          </div>
+
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1"><Save className="h-4 w-4 mr-2" />Salva Prenotazione</Button>
-            <Button type="button" variant="outline" onClick={onCancel}>Annulla</Button>
+            <Button type="submit" className="flex-1">
+              <Save className="h-4 w-4 mr-2" />
+              {booking ? 'Aggiorna Prenotazione' : 'Crea Prenotazione'}
+            </Button>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Annulla
+            </Button>
           </div>
         </form>
       </CardContent>

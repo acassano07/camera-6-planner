@@ -1,95 +1,306 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Hotel, Calendar, Users, ArrowLeft, ArrowRight } from "lucide-react";
+import { Plus, Hotel, Calendar, Users, TrendingUp } from "lucide-react";
+import { RoomCard } from "@/components/RoomCard";
+import { BookingCard } from "@/components/BookingCard";
 import { BookingForm } from "@/components/BookingForm";
-import { CalendarView } from "@/components/Calendar";
+import { Calendar as CalendarView } from "@/components/Calendar";
 import { Room, Booking, BookingFormData } from "@/types/booking";
 import { useToast } from "@/hooks/use-toast";
-import { BookingCard } from "@/components/BookingCard";
-import { useMobile } from "@/hooks/use-mobile";
+import { findOptimalRoom, getOccupancyStats } from "@/utils/roomAssignment";
 
 const initialRooms: Room[] = [
-    { id: 1, name: "Camera 1", type: "matrimoniale", capacity: 2, status: "available" },
-    { id: 2, name: "Camera 2", type: "singola", capacity: 1, status: "available" },
-    { id: 3, name: "Camera 3", type: "tripla", capacity: 3, status: "available" },
-    { id: 4, name: "Camera 4", type: "matrimoniale", capacity: 2, status: "available" },
-    { id: 5, name: "Camera 5", type: "quadrupla", capacity: 4, status: "available" },
-    { id: 6, name: "Camera 6", type: "tripla", capacity: 3, status: "available" },
+  { id: 1, name: "Camera 1", type: "Camera Standard", capacity: 3, status: "available" },
+  { id: 2, name: "Camera 2", type: "Camera Standard", capacity: 3, status: "available" },
+  { id: 3, name: "Camera 3", type: "Camera Familiare", capacity: 4, status: "available" },
+  { id: 4, name: "Camera 4", type: "Camera Piccola", capacity: 2, status: "available" },
+  { id: 5, name: "Camera 5", type: "Camera Familiare", capacity: 4, status: "available" },
+  { id: 6, name: "Camera 6", type: "Camera Familiare", capacity: 4, status: "available" },
 ];
 
 const Index = () => {
   const [rooms] = useState<Room[]>(initialRooms);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [showBookingForm, setShowBookingForm] = useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState<number | undefined>();
   const [editingBooking, setEditingBooking] = useState<Booking | undefined>();
+  const [selectedRoomFilter, setSelectedRoomFilter] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const { toast } = useToast();
-  const isMobile = useMobile();
-  const [activeTab, setActiveTab] = useState("calendar");
 
-  const handleAddBooking = (date?: Date) => {
+  const handleAddBooking = (roomId?: number, date?: Date) => {
+    setSelectedRoomId(roomId);
+    setSelectedDate(date);
     setEditingBooking(undefined);
     setShowBookingForm(true);
   };
 
   const handleEditBooking = (booking: Booking) => {
     setEditingBooking(booking);
+    setSelectedRoomId(undefined);
     setShowBookingForm(true);
   };
 
   const handleSubmitBooking = (data: BookingFormData) => {
-    // Logic to save booking (create or update)
+    if (editingBooking) {
+      // Update existing booking
+      setBookings(prev => prev.map(booking => 
+        booking.id === editingBooking.id
+          ? {
+              ...booking,
+              ...data,
+              checkIn: new Date(data.checkIn),
+              checkOut: new Date(data.checkOut),
+            }
+          : booking
+      ));
+      toast({
+        title: "Prenotazione aggiornata",
+        description: `La prenotazione di ${data.guestName} è stata aggiornata con successo.`,
+      });
+    } else {
+      // Create new booking
+      const newBooking: Booking = {
+        id: Date.now().toString(),
+        ...data,
+        checkIn: new Date(data.checkIn),
+        checkOut: new Date(data.checkOut),
+        status: 'confirmed',
+        createdAt: new Date(),
+      };
+      setBookings(prev => [...prev, newBooking]);
+      toast({
+        title: "Prenotazione creata",
+        description: `Nuova prenotazione per ${data.guestName} creata con successo.`,
+      });
+    }
     setShowBookingForm(false);
+    setSelectedRoomId(undefined);
+    setSelectedDate(undefined);
+    setEditingBooking(undefined);
   };
 
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
+  const handleDeleteBooking = (bookingId: string) => {
+    const booking = bookings.find(b => b.id === bookingId);
+    setBookings(prev => prev.filter(b => b.id !== bookingId));
+    toast({
+      title: "Prenotazione cancellata",
+      description: `La prenotazione di ${booking?.guestName} è stata cancellata.`,
+      variant: "destructive",
+    });
+  };
 
-  const todaysBookings = useMemo(() => bookings.filter(b => new Date(b.checkIn) <= today && new Date(b.checkOut) > today), [bookings]);
-  const tomorrowsBookings = useMemo(() => bookings.filter(b => new Date(b.checkIn).toDateString() === tomorrow.toDateString()), [bookings]);
+  const handleViewBookings = (roomId: number) => {
+    setSelectedRoomFilter(roomId);
+  };
+
+  const filteredBookings = selectedRoomFilter 
+    ? bookings.filter(b => b.roomId === selectedRoomFilter)
+    : bookings;
+
+  const getRoomName = (roomId: number) => {
+    return rooms.find(r => r.id === roomId)?.name || `Camera ${roomId}`;
+  };
+
+  const totalRevenue = bookings
+    .filter(b => b.status === 'confirmed')
+    .reduce((sum, b) => sum + b.totalPrice, 0);
+
+  const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length;
+  const occupiedRooms = rooms.filter(room => {
+    return bookings.some(b => 
+      b.roomId === room.id && 
+      b.status === 'confirmed' &&
+      new Date(b.checkIn) <= new Date() && 
+      new Date(b.checkOut) >= new Date()
+    );
+  }).length;
 
   if (showBookingForm) {
     return (
-      <div className="p-4"><BookingForm rooms={rooms} booking={editingBooking} onSubmit={handleSubmitBooking} onCancel={() => setShowBookingForm(false)} /></div>
+      <div className="min-h-screen bg-gradient-to-br from-background to-muted/30 p-4">
+        <div className="max-w-4xl mx-auto pt-8">
+          <BookingForm
+            rooms={rooms}
+            selectedRoomId={selectedRoomId}
+            selectedDate={selectedDate}
+            booking={editingBooking}
+            bookings={bookings}
+            onSubmit={handleSubmitBooking}
+            onCancel={() => {
+              setShowBookingForm(false);
+              setSelectedRoomId(undefined);
+              setSelectedDate(undefined);
+              setEditingBooking(undefined);
+            }}
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="flex justify-between items-center p-4 border-b">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Hotel /> Gestionale</h1>
-        <Button onClick={() => handleAddBooking()}><Plus className="h-4 w-4 mr-2" /> Nuova Prenotazione</Button>
-      </header>
-
-      {isMobile ? (
-        <div className="overflow-x-hidden">
-            <div className="flex transition-transform duration-300" style={{ transform: `translateX(-${activeTab === 'calendar' ? 0 : 100}%)` }}>
-                <div className="w-full flex-shrink-0 p-4"> <CalendarView bookings={bookings} rooms={rooms} onAddBooking={handleAddBooking} onEditBooking={handleEditBooking} /> </div>
-                <div className="w-full flex-shrink-0 p-4"> {/* Today/Tomorrow View */} </div>
-            </div>
-            <div className="flex justify-center p-2"> <Button onClick={() => setActiveTab(activeTab === 'calendar' ? 'today' : 'calendar')}>Cambia Vista</Button> </div>
+    <div className="min-h-screen bg-gradient-to-br from-background to-muted/30">
+      <div className="container mx-auto p-6 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
+              <Hotel className="h-8 w-8 text-primary" />
+              Gestionale Affittacamere
+            </h1>
+            <p className="text-muted-foreground">Gestione prenotazioni per 6 camere</p>
+          </div>
+          <Button onClick={() => handleAddBooking()} size="lg">
+            <Plus className="h-4 w-4 mr-2" />
+            Nuova Prenotazione
+          </Button>
         </div>
-      ) : (
-        <Tabs defaultValue="calendar" className="p-4">
-          <TabsList><TabsTrigger value="calendar">Calendario</TabsTrigger><TabsTrigger value="today">Oggi & Domani</TabsTrigger></TabsList>
-          <TabsContent value="calendar"><CalendarView bookings={bookings} rooms={rooms} onAddBooking={handleAddBooking} onEditBooking={handleEditBooking} /></TabsContent>
-          <TabsContent value="today">
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Ospiti di Oggi</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {todaysBookings.length > 0 ? todaysBookings.map(b => <BookingCard key={b.id} booking={b} roomName={rooms.find(r=>r.id === b.rooms[0].roomId)?.name || ''} />) : <p>Nessun ospite oggi.</p>}
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <Hotel className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Camere Occupate</p>
+                  <p className="text-2xl font-bold">{occupiedRooms}/6</p>
+                </div>
               </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-accent" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Prenotazioni</p>
+                  <p className="text-2xl font-bold">{confirmedBookings}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-success" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Ospiti Totali</p>
+                  <p className="text-2xl font-bold">
+                    {bookings.filter(b => b.status === 'confirmed').reduce((sum, b) => sum + b.guests, 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-warning" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Ricavi Totali</p>
+                  <p className="text-2xl font-bold">€{totalRevenue.toFixed(2)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Content */}
+        <Tabs defaultValue="rooms" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="rooms">Camere</TabsTrigger>
+            <TabsTrigger value="calendar">Calendario</TabsTrigger>
+            <TabsTrigger value="bookings">Prenotazioni</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="rooms" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {rooms.map((room) => (
+                <RoomCard
+                  key={room.id}
+                  room={room}
+                  bookings={bookings}
+                  onAddBooking={handleAddBooking}
+                  onViewBookings={handleViewBookings}
+                />
+              ))}
             </div>
-            <div className="mt-6">
-              <h2 className="text-xl font-semibold mb-3 text-gray-500">In Arrivo Domani</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 opacity-70">
-                {tomorrowsBookings.length > 0 ? tomorrowsBookings.map(b => <BookingCard key={b.id} booking={b} roomName={rooms.find(r=>r.id === b.rooms[0].roomId)?.name || ''} />) : <p>Nessun arrivo previsto per domani.</p>}
-              </div>
+          </TabsContent>
+
+          <TabsContent value="calendar" className="space-y-6">
+            <CalendarView
+              bookings={bookings}
+              rooms={rooms}
+              onAddBooking={(date) => handleAddBooking(undefined, date)}
+              onEditBooking={handleEditBooking}
+            />
+          </TabsContent>
+
+          <TabsContent value="bookings" className="space-y-6">
+            <div className="flex flex-wrap gap-2 items-center">
+              <Button
+                variant={selectedRoomFilter === null ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedRoomFilter(null)}
+              >
+                Tutte le Camere
+              </Button>
+              {rooms.map((room) => (
+                <Button
+                  key={room.id}
+                  variant={selectedRoomFilter === room.id ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedRoomFilter(room.id)}
+                >
+                  {room.name}
+                  <Badge variant="secondary" className="ml-2">
+                    {bookings.filter(b => b.roomId === room.id && b.status === 'confirmed').length}
+                  </Badge>
+                </Button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredBookings.length > 0 ? (
+                filteredBookings.map((booking) => (
+                  <BookingCard
+                    key={booking.id}
+                    booking={booking}
+                    roomName={getRoomName(booking.roomId)}
+                    onEdit={handleEditBooking}
+                    onDelete={handleDeleteBooking}
+                  />
+                ))
+              ) : (
+                <div className="col-span-full text-center py-12">
+                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-muted-foreground">
+                    Nessuna prenotazione trovata
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {selectedRoomFilter 
+                      ? "Non ci sono prenotazioni per questa camera."
+                      : "Inizia creando la tua prima prenotazione."
+                    }
+                  </p>
+                  <Button onClick={() => handleAddBooking()}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Crea Prima Prenotazione
+                  </Button>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
-      )}
+      </div>
     </div>
   );
 };

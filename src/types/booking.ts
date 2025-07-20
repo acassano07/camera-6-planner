@@ -1,41 +1,34 @@
 export interface Room {
   id: number;
   name: string;
-  type: "singola" | "matrimoniale" | "tripla" | "quadrupla";
+  type: string;
   capacity: number;
-  status: "available" | "occupied" | "maintenance";
+  status: 'available' | 'occupied' | 'maintenance';
 }
-
-export interface BookedRoom {
-  roomId: number;
-  guests: number;
-}
-
-export type TouristTaxExemption = | "minore" | "disabile" | "accompagnatore_disabile" | "autista" | "forze_ordine" | "sanitari" | "residente" | "aire";
 
 export interface Booking {
   id: string;
+  roomId: number;
   guestName: string;
-  guestEmail?: string;
+  guestEmail: string;
   guestPhone: string;
   checkIn: Date;
   checkOut: Date;
+  guests: number;
   notes?: string;
   totalPrice: number;
-  status: "confirmed" | "pending" | "cancelled";
+  status: 'confirmed' | 'pending' | 'cancelled';
   createdAt: Date;
-  source: "private" | "booking.com";
-  rooms: BookedRoom[];
-  touristTaxExemptions?: TouristTaxExemption[];
 }
 
 export interface BookingFormData {
+  roomId: number;
   guestName: string;
-  guestEmail?: string;
+  guestEmail: string;
   guestPhone: string;
   checkIn: string;
   checkOut: string;
+  guests: number;
   notes?: string;
-  rooms: BookedRoom[];
-  touristTaxExemptions?: TouristTaxExemption[];
+  totalPrice: number;
 }
