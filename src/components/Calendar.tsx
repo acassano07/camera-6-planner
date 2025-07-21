@@ -19,7 +19,7 @@ type ViewType = 'month' | 'week' | 'day';
 
 export function Calendar({ bookings, rooms, onAddBooking, onEditBooking }: CalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewType, setViewType] = useState<ViewType>('month');
+  const [viewType, setViewType] = useState<ViewType>('week');
 
   const getRoomName = (roomId: number) => {
     return rooms.find(r => r.id === roomId)?.name || `Camera ${roomId}`;

@@ -11,6 +11,9 @@ import { BookingCard } from "@/components/BookingCard";
 import { BookingForm } from "@/components/BookingForm";
 import { Calendar as CalendarView } from "@/components/Calendar";
 import { RoomOptimizer } from "@/components/RoomOptimizer";
+import { RoomDayNavigator } from "@/components/RoomDayNavigator";
+import { PriceSettings } from "@/components/PriceSettings";
+import { ClosureSettings } from "@/components/ClosureSettings";
 import { Room, Booking, BookingFormData } from "@/types/booking";
 import { useToast } from "@/hooks/use-toast";
 import { findOptimalRoom, getOccupancyStats } from "@/utils/roomAssignment";
@@ -317,62 +320,11 @@ const Index = () => {
               onApplyMoves={handleApplyOptimization}
             />
             
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold mb-3">Occupazione Camere - Oggi</h3>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {rooms.map((room) => {
-                const todayBookings = bookings.filter(booking => {
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  const tomorrow = new Date(today);
-                  tomorrow.setDate(tomorrow.getDate() + 1);
-                  
-                  return booking.roomId === room.id &&
-                         booking.status === 'confirmed' &&
-                         booking.checkIn <= tomorrow &&
-                         booking.checkOut >= today;
-                });
-                
-                return (
-                  <Card key={room.id} className="p-4">
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium">{room.name}</h4>
-                        <div className={`px-2 py-1 rounded text-xs font-medium ${
-                          todayBookings.length > 0 
-                            ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                            : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
-                        }`}>
-                          {todayBookings.length > 0 ? 'Occupata' : 'Libera'}
-                        </div>
-                      </div>
-                      
-                      <div className="text-sm text-muted-foreground">
-                        {room.type} - {room.capacity} posti
-                      </div>
-                      
-                      {todayBookings.length > 0 && (
-                        <div className="space-y-2">
-                          {todayBookings.map(booking => (
-                            <div key={booking.id} className="p-2 bg-muted/50 rounded text-sm">
-                              <div className="font-medium">{booking.guestName}</div>
-                              <div className="text-muted-foreground">
-                                {booking.guests} ospiti - {booking.clientType === 'private' ? 'Privato' : 'Booking.com'}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {booking.checkIn.toLocaleDateString()} - {booking.checkOut.toLocaleDateString()}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
+            <RoomDayNavigator 
+              rooms={rooms}
+              bookings={bookings}
+              onAddBooking={handleAddBooking}
+            />
           </TabsContent>
 
           <TabsContent value="calendar" className="space-y-6">
@@ -385,32 +337,8 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="settings" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Impostazioni Prezzi</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Prezzo matrimoniale (2 adulti)</Label>
-                    <Input type="number" placeholder="45" />
-                  </div>
-                  <div>
-                    <Label>Prezzo terzo adulto</Label>
-                    <Input type="number" placeholder="19" />
-                  </div>
-                  <div>
-                    <Label>Prezzo quarto adulto</Label>
-                    <Input type="number" placeholder="15" />
-                  </div>
-                  <div>
-                    <Label>Prezzo bambini (sotto 12 anni)</Label>
-                    <Input type="number" placeholder="0" />
-                  </div>
-                </div>
-                <Button>Salva Impostazioni</Button>
-              </CardContent>
-            </Card>
+            <PriceSettings />
+            <ClosureSettings />
           </TabsContent>
 
         </Tabs>

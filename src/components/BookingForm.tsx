@@ -115,8 +115,8 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
         }
       }
 
-      // Auto assign per la prima camera
-      if (roomIndex === 0 && autoAssign && !updated[roomIndex].lockedRoom && (field === 'guests' || field === 'checkIn' || field === 'checkOut')) {
+      // Auto assign per tutte le camere quando attivato
+      if (autoAssign && !updated[roomIndex].lockedRoom && (field === 'guests' || field === 'checkIn' || field === 'checkOut')) {
         const currentRoomData = updated[roomIndex];
         if (currentRoomData.checkIn && currentRoomData.checkOut && currentRoomData.guests) {
           const result = findOptimalRoomAdvanced(
@@ -268,7 +268,9 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="guestPhone">Telefono</Label>
+                <Label htmlFor="guestPhone">
+                  Telefono {bookingRooms[0]?.clientType === 'booking' ? '(opzionale)' : ''}
+                </Label>
                 <Input
                   id="guestPhone"
                   type="tel"
@@ -280,7 +282,7 @@ export function BookingForm({ rooms, selectedRoomId, selectedDate, booking, book
                     });
                   }}
                   placeholder="+39 123 456 7890"
-                  required
+                  required={bookingRooms[0]?.clientType !== 'booking'}
                 />
               </div>
             </div>
